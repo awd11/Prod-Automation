@@ -1,0 +1,5 @@
+requests
+requests_ntlm
+pandas
+flask
+flask_cors
