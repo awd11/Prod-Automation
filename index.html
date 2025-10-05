@@ -1,156 +1,137 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live SharePoint Data Viewer</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-    </style>
+  <meta charset="utf-8" />
+  <title>SharePoint Dashboard (Test)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    .controls { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+    table { border-collapse: collapse; width: 100%; margin-top:12px; }
+    th, td { border: 1px solid #ddd; padding:8px; }
+    th { background:#f3f3f3; text-align:left; }
+    #messages { color: red; margin-top:8px; }
+  </style>
 </head>
-<body class="bg-gray-100 text-gray-800">
+<body>
+  <h2>SharePoint Dashboard (Demo)</h2>
 
-    <div class="container mx-auto p-4 md:p-8">
-        <header class="bg-white shadow-md rounded-lg p-6 mb-8">
-            <h1 class="text-3xl font-bold text-gray-900">SharePoint Live Data</h1>
-            <p class="mt-2 text-gray-600">Enter your credentials to connect directly to the SharePoint API.</p>
-        </header>
+  <div class="controls">
+    <label>List:
+      <select id="listName">
+        <option>Firsttime_Prod_Audible_V4</option>
+        <option>Image_Buk_2024_V9</option>
+        <option>3P Ingestion Workflow</option>
+        <option>ACX+QA+2024</option>
+        <option>NPT</option>
+      </select>
+    </label>
 
-        <!-- Login Form -->
-        <div id="login-container" class="bg-white p-8 rounded-lg shadow-md">
-            <h2 class="text-2xl font-semibold mb-6">Authentication Required</h2>
-            <div class="space-y-4">
-                <div>
-                    <label for="username" class="block text-sm font-medium text-gray-700">SharePoint Username</label>
-                    <input type="text" id="username" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="your-username">
-                </div>
-                <div>
-                    <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                    <input type="password" id="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm" placeholder="••••••••">
-                </div>
-                <button id="fetch-data-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition duration-150 ease-in-out">
-                    Connect and Fetch Data
-                </button>
-            </div>
-            <div id="error-message" class="mt-4 text-red-600 text-sm"></div>
-        </div>
+    <label>Start: <input id="start" type="date" /></label>
+    <label>End: <input id="end" type="date" /></label>
 
-        <!-- Data Display Area -->
-        <div id="data-container" class="hidden mt-8">
-            <div id="loading" class="text-center p-4">
-                <p class="text-lg text-gray-600">Connecting to SharePoint and fetching data...</p>
-            </div>
-            <div id="results-table" class="bg-white rounded-lg shadow-md overflow-hidden">
-                <!-- Table will be generated here by JavaScript -->
-            </div>
-        </div>
-    </div>
+    <button id="fetchBtn">Fetch</button>
+    <button id="productivityBtn">Productivity (simple)</button>
+  </div>
 
-    <script>
-        document.getElementById('fetch-data-btn').addEventListener('click', async () => {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const errorMessage = document.getElementById('error-message');
-            const loginContainer = document.getElementById('login-container');
-            const dataContainer = document.getElementById('data-container');
-            const resultsTable = document.getElementById('results-table');
-            const loadingIndicator = document.getElementById('loading');
+  <div id="messages"></div>
 
-            errorMessage.textContent = '';
-            resultsTable.innerHTML = '';
+  <div id="summary"></div>
 
-            if (!username || !password) {
-                errorMessage.textContent = 'Username and password are required.';
-                return;
-            }
+  <div id="tableContainer"></div>
 
-            // Show loading state and hide login form
-            loginContainer.classList.add('hidden');
-            dataContainer.classList.remove('hidden');
-            loadingIndicator.classList.remove('hidden');
+<script>
+const API_BASE = "http://localhost:8080"; // change to your backend URL when deployed
 
-            // --- THIS IS WHERE THE LIVE API CALL HAPPENS ---
-            // In a real environment, this function would make a `fetch` call
-            // to your organization's CORS proxy with the user's credentials.
-            // For this demonstration, we will simulate a successful API call
-            // and display sample data matching your SharePoint list structure.
+function showMessage(msg, isError=true){
+  const el = document.getElementById('messages');
+  el.style.color = isError ? 'red' : 'green';
+  el.textContent = msg;
+}
 
-            try {
-                // Simulate network delay
-                await new Promise(resolve => setTimeout(resolve, 1500));
+function isoToShort(dateStr){
+  if(!dateStr) return '';
+  return dateStr;
+}
 
-                // This is a MOCK API call. Replace with your actual proxy endpoint.
-                const data = await mockFetchSharePointData(username, password);
-                
-                displayData(data);
+document.getElementById('fetchBtn').addEventListener('click', async () => {
+  const listName = document.getElementById('listName').value;
+  const startRaw = document.getElementById('start').value;
+  const endRaw = document.getElementById('end').value;
+  if(!startRaw || !endRaw){ showMessage("Pick start and end date"); return; }
+  // convert yyyy-mm-dd -> mm/dd/yyyy which backend expects
+  const toMMDDYYYY = d => {
+    const dt = new Date(d);
+    const m = String(dt.getMonth()+1).padStart(2,'0');
+    const day = String(dt.getDate()).padStart(2,'0');
+    return `${m}/${day}/${dt.getFullYear()}`;
+  };
+  const body = { list_name: listName, start_date: toMMDDYYYY(startRaw), end_date: toMMDDYYYY(endRaw) };
+  showMessage("Fetching...", false);
+  try{
+    const res = await fetch(API_BASE + "/fetch-list", { method: "POST", headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
+    if(!res.ok){ const txt = await res.text(); showMessage("Error: " + txt); return; }
+    const data = await res.json();
+    showMessage("Fetched OK", false);
+    renderList(data);
+  }catch(err){
+    showMessage("Fetch failed: " + err);
+  }
+});
 
-            } catch (error) {
-                // Handle real API errors here
-                loginContainer.classList.remove('hidden');
-                dataContainer.classList.add('hidden');
-                errorMessage.textContent = `Error: ${error.message}. Please check credentials and connection.`;
-            } finally {
-                loadingIndicator.classList.add('hidden');
-            }
-        });
+document.getElementById('productivityBtn').addEventListener('click', async () => {
+  const startRaw = document.getElementById('start').value;
+  const endRaw = document.getElementById('end').value;
+  if(!startRaw || !endRaw){ showMessage("Pick start and end date"); return; }
+  const toMMDDYYYY = d => {
+    const dt = new Date(d);
+    const m = String(dt.getMonth()+1).padStart(2,'0');
+    const day = String(dt.getDate()).padStart(2,'0');
+    return `${m}/${day}/${dt.getFullYear()}`;
+  };
+  const body = { list_name: 'ALL', start_date: toMMDDYYYY(startRaw), end_date: toMMDDYYYY(endRaw) };
+  showMessage("Computing productivity...", false);
+  try{
+    const res = await fetch(API_BASE + "/productivity", { method: "POST", headers: {'content-type':'application/json'}, body: JSON.stringify(body) });
+    if(!res.ok){ showMessage("Error computing productivity"); return; }
+    const data = await res.json();
+    renderProductivity(data.data);
+  }catch(err){
+    showMessage("Error: " + err);
+  }
+});
 
-        function displayData(items) {
-            const tableContainer = document.getElementById('results-table');
-            if (!items || items.length === 0) {
-                tableContainer.innerHTML = '<p class="p-4 text-gray-600">No data found in the SharePoint list.</p>';
-                return;
-            }
+function renderList(payload){
+  const container = document.getElementById('tableContainer');
+  container.innerHTML = '';
+  const s = document.createElement('div');
+  s.innerHTML = `<strong>Total Minutes:</strong> ${payload.total_minutes} &nbsp; <strong>Process Types:</strong> ${JSON.stringify(payload.process_types)}`;
+  container.appendChild(s);
 
-            const headers = ['ID', 'Title', 'Status', 'Severity', 'Created', 'Assigned To'];
-            const table = document.createElement('table');
-            table.className = 'min-w-full divide-y divide-gray-200';
-            
-            const thead = document.createElement('thead');
-            thead.className = 'bg-gray-50';
-            let headerRow = '<tr>';
-            headers.forEach(header => {
-                headerRow += `<th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">${header}</th>`;
-            });
-            headerRow += '</tr>';
-            thead.innerHTML = headerRow;
-            table.appendChild(thead);
+  const table = document.createElement('table');
+  table.innerHTML = `<thead><tr><th>Title</th><th>Date</th><th>Minutes</th><th>Process</th></tr></thead><tbody></tbody>`;
+  const tbody = table.querySelector('tbody');
+  for(const row of payload.detailed_data){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${row.Title}</td><td>${row.Date}</td><td>${row.Minutes}</td><td>${row.Process || ''}</td>`;
+    tbody.appendChild(tr);
+  }
+  container.appendChild(table);
+}
 
-            const tbody = document.createElement('tbody');
-            tbody.className = 'bg-white divide-y divide-gray-200';
-            items.forEach(item => {
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.ID || ''}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.Title || ''}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.Status || ''}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.Severity || ''}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${new Date(item.Created).toLocaleString()}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.AssignedTo ? item.AssignedTo.Title : 'N/A'}</td>
-                `;
-                tbody.appendChild(row);
-            });
-            table.appendChild(tbody);
-
-            tableContainer.appendChild(table);
-        }
-        
-        // --- MOCK FUNCTION TO SIMULATE API CALL ---
-        // This function simulates the behavior of the real SharePoint API call.
-        async function mockFetchSharePointData(user, pass) {
-            console.log(`Simulating connection for user: ${user}`);
-            if (pass === "fail") { // You can test the error state by typing "fail" as the password
-                 throw new Error("Invalid credentials");
-            }
-            // Return sample data that matches the structure from your SharePoint list.
-            return [
-                { "ID": 101, "Title": "Login component failure", "Status": "In Progress", "Severity": "High", "Created": "2025-10-04T10:00:00Z", "AssignedTo": { "Title": "jdoe" } },
-                { "ID": 102, "Title": "API timeout on search", "Status": "Resolved", "Severity": "Medium", "Created": "2025-10-03T14:30:00Z", "AssignedTo": { "Title": "asmith" } },
-                { "ID": 103, "Title": "UI glitch on mobile view", "Status": "Pending Input", "Severity": "Low", "Created": "2025-10-05T09:15:00Z", "AssignedTo": { "Title": "mgarcia" } }
-            ];
-        }
-
-    </script>
+function renderProductivity(rows){
+  const container = document.getElementById('summary');
+  container.innerHTML = '<h3>Productivity</h3>';
+  const table = document.createElement('table');
+  table.innerHTML = `<thead><tr><th>User</th><th>Minutes</th></tr></thead><tbody></tbody>`;
+  const tbody = table.querySelector('tbody');
+  rows.forEach(r => {
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td>${r.user}</td><td>${r.minutes}</td>`;
+    tbody.appendChild(tr);
+  });
+  container.appendChild(table);
+  showMessage('Productivity loaded', false);
+}
+</script>
 </body>
 </html>
-
